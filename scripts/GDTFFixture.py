@@ -5,6 +5,7 @@ import sys
 sys.path.insert(1, project.folder+'/modules')
 
 import pygdtf
+import re
 
 from CallbacksExt import CallbacksExt
 from TDStoreTools import StorageManager
@@ -49,6 +50,8 @@ class GDTFFixture(CallbacksExt):
 			# Only 'name' is required...
 			{'name': 'Channels', 'default': [], 'readOnly': False,
 			 						'property': True, 'dependable': True},
+			{'name': 'ChannelSets', 'default': {}, 'readOnly': False,
+			 						'property': True, 'dependable': False},
 		]
 		self.fixture = None
 		self.stored = StorageManager(self, self.dataComp, storedItems)
@@ -82,65 +85,134 @@ class GDTFFixture(CallbacksExt):
 		dmx_page = self.ownerComp.customPages[pages.index('DMX')]
 
 		channels = []
+		chan_sets = {}
+		order = 0
 		m = self.fixture.dmx_modes[mode]
+
+		#pprint([dir(c) for c in m.dmx_channels])
+
 		for c in m.dmx_channels:
-			
-			logical_chan = c.logical_channels[0]
-			offset = c.offset
-			name = logical_chan.attribute.str_link
-			p_name = name.lower().capitalize().replace('_', '')
-			
-			#pprint(logical_chan.channel_functions[0].__dict__)
+			order += 1
+			#print(dir(c))
+			#print(len(c.logical_channels))
 
-			channel_function = logical_chan.channel_functions[0]
+			if len(c.logical_channels) > 0:
+				logical_chan = c.logical_channels[0]
+				offset = c.offset
+				name = logical_chan.attribute.str_link
+				p_name = name.lower().capitalize().replace('_', '')
+				
+				#pprint(logical_chan.channel_functions[0].__dict__)
 
-			byte_count = channel_function.dmx_from.byte_count
 
-			print(byte_count)
-			default = channel_function.default.value
+				channel_function = logical_chan.channel_functions[0]
 
-			if len(logical_chan.channel_functions) < 2:
-				physical_from = channel_function.physical_from
-				physical_to = channel_function.physical_to
-			else:
+				byte_count = channel_function.dmx_from.byte_count
+
+				#print(byte_count)
+				default = channel_function.default.value
 				physical_from = 0
 				physical_to = 255**byte_count
 
-			default = tdu.remap(default, 0, 256**byte_count,physical_from, physical_to)	
+				# if len(logical_chan.channel_functions) < 2:
+				# 	physical_from = channel_function.physical_from
+				# 	physical_to = channel_function.physical_to
+				# else:
+				# 	physical_from = 0
+				# 	physical_to = 255**byte_count
+
+				# default = tdu.remap(default, 0, 256**byte_count,physical_from, physical_to)	
+				
+
+				#pprint(channel_function.mode_to.__dict__)
+				#print(name, default)
+
+				p = dmx_page.appendInt(
+					p_name,
+					label = name
+				)[0]
+
+				p.min = 0
+				p.normMin = 0
+				p.default = default
+				p.val = default
+				p.max = physical_to
+				p.normMax = physical_to
+				p.order = order #offset[0]
+				p.startSection = True
+
+				# order += 1
+				# p2 = dmx_page.appendStr(
+				# 	p_name+'fn',
+				# 	label = name + " Fn"
+				# )[0]
+				# p2.readOnly = True
+				# p2.order = order
+
+				# order += 1
+				# p2 = dmx_page.appendStr(
+				# 	p_name+'set',
+				# 	label = name + " Set"
+				# )[0]
+				# p2.readOnly = True
+				# p2.order = order
+
+				# order += 1
+				# p2 = dmx_page.appendFloat(
+				# 	p_name+'phys',
+				# 	label = name + " Phys"
+				# )[0]
+				# p2.order = order
+
+
+				for cf in logical_chan.channel_functions:
+					for cs in cf.channel_sets:
+						if cs.name != '':
+							order += 1
+							#print(cs.name)
+
+							n = cs.name.lower()
+							n = re.sub('[^a-z0-9]+', '', n)
+
+							#print(p_name + n)
+
+							cs_par_name = p_name+n
+							set_p = dmx_page.appendPulse(
+								cs_par_name,
+								label = cs.name
+							)[0]
+							set_p.order = order
+
+							# pprint(dir(cs))
+							dmx_from = cs.dmx_from
+							#print(dir(dmx_from))
+							chan_sets[cs_par_name] = {
+								'chan_par_name': p_name,
+								'value': dmx_from.value
+							}
+
+
+							
+
+				# p.setattr('test', {'foo': 'bar'})
+
+				channels.append(
+					{
+						'offset': offset,
+						'name': name,
+						'p_name': p_name,
+						'byte_count': byte_count,
+						'default': default,
+						'physical_from': physical_from,
+						'physical_to': physical_to,
+						'chan_sets': chan_sets
+					}
+				)
+
+
+
 			
-
-			#pprint(channel_function.mode_to.__dict__)
-			print(name, default)
-
-			p = dmx_page.appendFloat(
-				p_name,
-				label = name
-			)[0]
-
-			p.min = physical_from
-			p.normMin = physical_from
-			p.default = default
-			p.val = default
-			p.max = physical_to
-			p.normMax = physical_to
-			p.order = offset[0]
-
-			channels.append(
-				{
-					'offset': offset,
-					'name': name,
-					'p_name': p_name,
-					'byte_count': byte_count,
-					'default': default,
-					'physical_from': physical_from,
-					'physical_to': physical_to
-				}
-			)
-
-
-
-			
-
+		self.stored['ChannelSets'] = chan_sets
 		self.stored['Channels'] = channels
 		# for m in self.fixture.dmx_modes[0]:
 			
